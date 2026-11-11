@@ -23,10 +23,11 @@ import {
   FolderArchive,
   File,
   Trash2,
-  HardDrive
+  HardDrive,
+  CheckSquare
 } from "lucide-react";
 import { useThemeStyles } from "@/lib/useThemeStyles";
-import { exportDatabase, importDatabase, BACKUP_KEYS } from "@/lib/store";
+import { exportDatabase, importDatabase, BACKUP_KEYS, exportTasksJSON, importTasksJSON } from "@/lib/store";
 import { syncManager, apiUrl } from "@/lib/sync";
 import { LocalSnapshotService, type LocalSnapshot } from "@/lib/localSnapshots";
 import { toPersianDigits } from "@/lib/shamsi";
@@ -39,11 +40,16 @@ interface Props {
 
 export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
   const { bg, fg, fgMuted, cardBorder, inputBg } = useThemeStyles();
-  const [activeTab, setActiveTab] = useState<"wifi" | "manual" | "files" | "auto">("wifi");
+  const [activeTab, setActiveTab] = useState<"wifi" | "manual" | "files" | "auto" | "tasks">("wifi");
   const [copySuccess, setCopySuccess] = useState(false);
   const [importText, setImportText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Tasks Tab States
+  const [tasksCopySuccess, setTasksCopySuccess] = useState(false);
+  const [tasksImportText, setTasksImportText] = useState("");
+  const [tasksImportMode, setTasksImportMode] = useState<"append" | "replace">("append");
 
   // WiFi Sync States
   const [serverStatus, setServerStatus] = useState<"checking" | "connected" | "disconnected">("checking");
@@ -310,6 +316,102 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
   };
 
   if (!isOpen) return null;
+
+  // Tasks Tab Handlers
+  const handleExportTasksFile = () => {
+    try {
+      setError(null);
+      const dataStr = exportTasksJSON();
+      const blob = new Blob([dataStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      
+      a.href = url;
+      a.download = `FocusFlow_Tasks_${dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setSuccessMsg("فایل تسک‌ها با موفقیت دانلود شد.");
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      setError("خطا در ایجاد و دانلود فایل تسک‌ها.");
+    }
+  };
+
+  const handleExportTasksClipboard = () => {
+    try {
+      setError(null);
+      const dataStr = exportTasksJSON();
+      navigator.clipboard.writeText(dataStr).then(() => {
+        setTasksCopySuccess(true);
+        setSuccessMsg("کد JSON تسک‌ها با موفقیت در کلیپ‌بورد کپی شد.");
+        setTimeout(() => {
+          setTasksCopySuccess(false);
+          setSuccessMsg(null);
+        }, 3000);
+      });
+    } catch (err) {
+      setError("خطا در کپی متن تسک‌ها.");
+    }
+  };
+
+  const handleImportTasksFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setError(null);
+    setSuccessMsg(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith(".json")) {
+      setError("لطفاً یک فایل معتبر با پسوند .json انتخاب کنید.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        if (!content) throw new Error("فایل خالی است");
+        
+        const res = importTasksJSON(content, tasksImportMode);
+        if (res.success) {
+          const modeLabel = tasksImportMode === "replace" ? "جایگزین شدند" : "افزوده و ادغام شدند";
+          setSuccessMsg(`${toPersianDigits(res.count)} تسک با موفقیت ${modeLabel}.`);
+          onSuccess();
+          setTimeout(() => setSuccessMsg(null), 4000);
+        } else {
+          setError(res.error || "خطا در پردازش فایل تسک‌ها.");
+        }
+      } catch (err: any) {
+        setError("فایل JSON انتخاب‌شده معتبر نیست.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const handleImportTasksFromText = () => {
+    if (!tasksImportText.trim()) {
+      setError("لطفاً متن JSON تسک‌ها را در کادر وارد کنید.");
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+
+    const res = importTasksJSON(tasksImportText, tasksImportMode);
+    if (res.success) {
+      const modeLabel = tasksImportMode === "replace" ? "جایگزین شدند" : "افزوده و ادغام شدند";
+      setSuccessMsg(`${toPersianDigits(res.count)} تسک با موفقیت ${modeLabel}.`);
+      setTasksImportText("");
+      onSuccess();
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } else {
+      setError(res.error || "خطا در وارد کردن تسک‌ها از متن.");
+    }
+  };
 
   // Manual Export to JSON file
   const handleExportFile = () => {
@@ -631,14 +733,14 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
         </div>
 
         {/* Tab Selection */}
-        <div className="flex rounded-xl p-1 mt-4 gap-1" style={{ backgroundColor: inputBg }}>
+        <div className="flex rounded-xl p-1 mt-4 gap-1 overflow-x-auto scrollbar-none" style={{ backgroundColor: inputBg }}>
           <button
             onClick={() => {
               setActiveTab("wifi");
               setError(null);
               setSuccessMsg(null);
             }}
-            className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+            className={`flex-1 min-w-[65px] flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
               activeTab === "wifi" 
                 ? "bg-amber-500 text-white shadow-md" 
                 : "text-gray-400 hover:text-white hover:bg-white/5"
@@ -655,7 +757,7 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
               setSuccessMsg(null);
               fetchSharedFiles();
             }}
-            className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+            className={`flex-1 min-w-[65px] flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
               activeTab === "files" 
                 ? "bg-amber-500 text-white shadow-md" 
                 : "text-gray-400 hover:text-white hover:bg-white/5"
@@ -672,7 +774,7 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
               setSuccessMsg(null);
               fetchAutoBackups();
             }}
-            className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+            className={`flex-1 min-w-[65px] flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
               activeTab === "auto" 
                 ? "bg-amber-500 text-white shadow-md" 
                 : "text-gray-400 hover:text-white hover:bg-white/5"
@@ -688,7 +790,7 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
               setError(null);
               setSuccessMsg(null);
             }}
-            className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+            className={`flex-1 min-w-[65px] flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
               activeTab === "manual" 
                 ? "bg-amber-500 text-white shadow-md" 
                 : "text-gray-400 hover:text-white hover:bg-white/5"
@@ -696,6 +798,22 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
           >
             <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
             <span>بکاپ دستی</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab("tasks");
+              setError(null);
+              setSuccessMsg(null);
+            }}
+            className={`flex-1 min-w-[75px] flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+              activeTab === "tasks" 
+                ? "bg-indigo-600 text-white shadow-md" 
+                : "text-gray-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <CheckSquare className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+            <span>فایل تسک‌ها</span>
           </button>
         </div>
 
@@ -713,7 +831,138 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
           </div>
         )}
 
-        {activeTab === "manual" ? (
+        {activeTab === "tasks" ? (
+          /* TASKS EXCHANGE TAB */
+          <div className="mt-5 space-y-6">
+            <div className="flex gap-2 p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-xs leading-relaxed text-indigo-300">
+              <Info className="h-4 w-4 flex-shrink-0 mt-0.5 text-indigo-400" />
+              <span>
+                این بخش فقط برای <b>تسک‌ها و جزئیات تمرین‌های آن‌ها</b> است. حجم فایل بسیار سبک است و می‌توانید به راحتی آن را به هوش مصنوعی بدهید تا دوره‌ها یا برنامه‌های آینده را برایتان بسازد، بدون آنکه محدودیت توکن یا تداخلی با سایر بخش‌های برنامه پیش بیاید.
+              </span>
+            </div>
+
+            {/* 1. Export Tasks */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold" style={{ color: fgMuted }}>۱. دانلود و خروجی تسک‌ها (جهت ارائه به هوش مصنوعی)</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={handleExportTasksFile}
+                  className="flex flex-col items-center justify-center gap-2 rounded-2xl border p-4 hover:bg-white/5 transition-all duration-200 cursor-pointer"
+                  style={{ borderColor: cardBorder }}
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
+                    <Download className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-bold" style={{ color: fg }}>دانلود فایل JSON تسک‌ها</span>
+                  <span className="text-[9px]" style={{ color: fgMuted }}>خروجی سبک، اختصاصی تسک‌ها</span>
+                </button>
+
+                <button
+                  onClick={handleExportTasksClipboard}
+                  className="flex flex-col items-center justify-center gap-2 rounded-2xl border p-4 hover:bg-white/5 transition-all duration-200 cursor-pointer"
+                  style={{ borderColor: cardBorder }}
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
+                    {tasksCopySuccess ? <Check className="h-5 w-5 text-emerald-400" /> : <Copy className="h-5 w-5" />}
+                  </div>
+                  <span className="text-[11px] font-bold" style={{ color: fg }}>
+                    {tasksCopySuccess ? "کپی شد!" : "کپی متن JSON تسک‌ها"}
+                  </span>
+                  <span className="text-[9px]" style={{ color: fgMuted }}>جهت چسباندن در چت هوش مصنوعی</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Import Tasks */}
+            <div className="space-y-3 pt-3 border-t" style={{ borderColor: cardBorder }}>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold" style={{ color: fgMuted }}>۲. وارد کردن تسک‌ها (خروجی هوش مصنوعی)</h4>
+              </div>
+
+              {/* Mode switch */}
+              <div className="p-1 rounded-xl flex gap-1 border" style={{ backgroundColor: inputBg, borderColor: cardBorder }}>
+                <button
+                  type="button"
+                  onClick={() => setTasksImportMode("append")}
+                  className={`flex-1 py-2 px-2 text-[11px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer text-center ${
+                    tasksImportMode === "append"
+                      ? "bg-indigo-600 text-white shadow-md"
+                      : "text-gray-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  افزودن و ادغام (تسک‌های قبلی بمانند)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTasksImportMode("replace")}
+                  className={`flex-1 py-2 px-2 text-[11px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer text-center ${
+                    tasksImportMode === "replace"
+                      ? "bg-rose-600 text-white shadow-md"
+                      : "text-gray-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  جایگزینی کامل (تسک‌های قبلی پاک شوند)
+                </button>
+              </div>
+
+              <div className="text-[11px] leading-relaxed p-2.5 rounded-xl bg-white/5 border border-white/5" style={{ color: fgMuted }}>
+                {tasksImportMode === "append" ? (
+                  <span>
+                    💡 <b>حالت افزودن:</b> تسک‌های کنونی شما در برنامه باقی می‌مانند و موارد جدید این فایل به لیست اضافه می‌شوند.
+                  </span>
+                ) : (
+                  <span className="text-rose-300">
+                    ⚠️ <b>حالت جایگزینی:</b> تمام تسک‌های پیشین حذف شده و فایل جدید جایگزین آنها خواهد شد.
+                  </span>
+                )}
+              </div>
+
+              {/* Upload File Button */}
+              <label 
+                className="w-full flex items-center justify-center gap-2 rounded-2xl border border-dashed p-4 hover:bg-white/5 transition-all duration-200 cursor-pointer"
+                style={{ borderColor: cardBorder }}
+              >
+                <Upload className="h-5 w-5 text-indigo-400" />
+                <span className="text-xs font-bold" style={{ color: fg }}>انتخاب و آپلود فایل JSON تسک‌ها</span>
+                <input 
+                  type="file" 
+                  accept=".json,application/json" 
+                  className="hidden" 
+                  onChange={handleImportTasksFile} 
+                />
+              </label>
+
+              {/* Paste JSON text */}
+              <div className="space-y-2 pt-2">
+                <span className="text-[11px] font-bold block" style={{ color: fgMuted }}>یا چسباندن مستقیم خروجی متنی هوش مصنوعی:</span>
+                <textarea
+                  value={tasksImportText}
+                  onChange={(e) => setTasksImportText(e.target.value)}
+                  placeholder="خروجی JSON هوش مصنوعی را اینجا Paste کنید..."
+                  dir="ltr"
+                  rows={3}
+                  className="w-full rounded-xl border p-2.5 font-mono text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  style={{
+                    backgroundColor: inputBg,
+                    borderColor: cardBorder,
+                    color: fg,
+                  }}
+                />
+                {tasksImportText.trim() && (
+                  <button
+                    onClick={handleImportTasksFromText}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 text-xs font-bold transition-all cursor-pointer shadow-md"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    <span>
+                      اعمال تسک‌ها ({tasksImportMode === "append" ? "افزودن و ادغام" : "جایگزینی کامل"})
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : activeTab === "manual" ? (
           /* MANUAL TABS */
           <div className="mt-5 space-y-6">
             <div className="space-y-3">

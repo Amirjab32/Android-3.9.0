@@ -1303,3 +1303,85 @@ export function confirmAndDelete(title: string, onConfirm: () => void) {
   }
 }
 
+export function exportTasksJSON(): string {
+  const tasks = TaskStore.list();
+  return JSON.stringify({ focusflow_tasks: tasks }, null, 2);
+}
+
+export function importTasksJSON(
+  jsonString: string,
+  mode: "replace" | "append"
+): { success: boolean; count: number; error?: string } {
+  try {
+    const parsed = JSON.parse(jsonString);
+    let incomingTasks: any[] = [];
+    if (Array.isArray(parsed)) {
+      incomingTasks = parsed;
+    } else if (parsed && typeof parsed === "object") {
+      if (Array.isArray(parsed.focusflow_tasks)) {
+        incomingTasks = parsed.focusflow_tasks;
+      } else if (Array.isArray(parsed.tasks)) {
+        incomingTasks = parsed.tasks;
+      } else {
+        return { success: false, count: 0, error: "فایل انتخاب‌شده شامل آرایه تسک‌ها نیست." };
+      }
+    } else {
+      return { success: false, count: 0, error: "قالب فایل نامعتبر است." };
+    }
+
+    if (incomingTasks.length === 0) {
+      return { success: false, count: 0, error: "هیچ تسکی در این فایل یافت نشد." };
+    }
+
+    const sanitizedTasks: Task[] = incomingTasks.map((t: any) => ({
+      id: typeof t.id === "string" && t.id.trim() ? t.id : generateId(),
+      title: typeof t.title === "string" && t.title.trim() ? t.title : "تسک بدون عنوان",
+      description: typeof t.description === "string" ? t.description : "",
+      priority: (["low", "medium", "high"].includes(t.priority) ? t.priority : "medium") as "low" | "medium" | "high",
+      scheduled_date: typeof t.scheduled_date === "string" && t.scheduled_date ? t.scheduled_date : getToday(),
+      activity_id: t.activity_id ?? null,
+      status: (["todo", "in_progress", "done"].includes(t.status) ? t.status : "todo") as "todo" | "in_progress" | "done",
+      kanban_column: (["todo", "in_progress", "done"].includes(t.kanban_column) ? t.kanban_column : (t.status || "todo")) as "todo" | "in_progress" | "done",
+      elapsed_seconds: typeof t.elapsed_seconds === "number" ? t.elapsed_seconds : 0,
+      timer_started_at: typeof t.timer_started_at === "number" ? t.timer_started_at : null,
+      timeline_slot: t.timeline_slot ?? null,
+      timeline_date: t.timeline_date ?? null,
+      intervals: Array.isArray(t.intervals) ? t.intervals : [],
+      created_date: typeof t.created_date === "string" ? t.created_date : getToday(),
+      completed_at: typeof t.completed_at === "number" ? t.completed_at : null,
+      tags: Array.isArray(t.tags) ? t.tags.filter((x: any) => typeof x === "string") : [],
+      comment: typeof t.comment === "string" ? t.comment : "",
+      reminder_enabled: !!t.reminder_enabled,
+      reminder_time: t.reminder_time ?? null,
+    }));
+
+    if (mode === "replace") {
+      setStore(TASKS_KEY, sanitizedTasks);
+    } else {
+      const currentTasks = getStore<Task>(TASKS_KEY);
+      const existingMap = new Map<string, Task>();
+      for (const t of currentTasks) {
+        existingMap.set(t.id, t);
+      }
+      for (const t of sanitizedTasks) {
+        if (existingMap.has(t.id)) {
+          existingMap.set(t.id, { ...existingMap.get(t.id)!, ...t });
+        } else {
+          existingMap.set(t.id, t);
+        }
+      }
+      setStore(TASKS_KEY, Array.from(existingMap.values()));
+    }
+
+    if (typeof window !== "undefined") {
+      markLocalModified();
+      window.dispatchEvent(new CustomEvent("focusflow-data-changed", { detail: { key: TASKS_KEY } }));
+      window.dispatchEvent(new CustomEvent("tasks-updated"));
+    }
+
+    return { success: true, count: sanitizedTasks.length };
+  } catch (err: any) {
+    return { success: false, count: 0, error: err?.message || "خطا در پردازش داده‌های فایل." };
+  }
+}
+

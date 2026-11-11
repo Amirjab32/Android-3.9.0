@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
-import { Trash2, Check, Clock, Loader2, MessageSquare, Play, Pause } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Trash2, Check, Clock, Loader2, MessageSquare, Play, Pause, FileText, ChevronDown, Copy } from "lucide-react";
 import { Task, RecurringActivity } from "@/lib/store";
 import { toShamsiShort, getGregorianToday, dayDiff, toPersianDigits } from "@/lib/shamsi";
 import { useThemeStyles } from "@/lib/useThemeStyles";
@@ -71,6 +71,8 @@ export default function TaskItem({ task, onStatusChange, onDelete, activities = 
   const { fg, fgMuted, cardBg } = useThemeStyles();
   const [hovered, setHovered] = useState(false);
   const [displaySeconds, setDisplaySeconds] = useState(task.elapsed_seconds || 0);
+  const [showDescription, setShowDescription] = useState(false);
+  const [copiedDesc, setCopiedDesc] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const today = getGregorianToday();
   const isOverdue =
@@ -108,7 +110,7 @@ export default function TaskItem({ task, onStatusChange, onDelete, activities = 
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -30 }}
-      className="relative flex items-center gap-3 overflow-hidden rounded-xl px-4 py-3 transition-colors"
+      className="relative flex flex-col overflow-hidden rounded-xl px-4 py-3 transition-colors"
       style={{
         border: `1px solid ${activity ? `${activity.color}40` : isOverdue ? "rgba(244,63,94,0.4)" : cfg.borderColor}`,
         backgroundColor: hovered
@@ -124,144 +126,220 @@ export default function TaskItem({ task, onStatusChange, onDelete, activities = 
         className="absolute right-0 top-0 h-full w-1 rounded-r-xl"
         style={{ backgroundColor: activity ? activity.color : isOverdue ? "#f43f5e" : cfg.leftBarColor }}
       />
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onStatusChange(task, status === "done" ? "todo" : "done");
-        }}
-        className="group flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-all hover:scale-110"
-        style={{
-          borderColor: status === "done"
-            ? "#10b981"
-            : activity
-              ? activity.color
-              : isOverdue
-                ? "#f43f5e"
-                : "rgba(148,163,184,0.5)",
-          backgroundColor: status === "done" ? "#10b981" : "transparent",
-        }}
-      >
-        {status === "done" ? (
-          <Check className="h-3.5 w-3.5 text-white stroke-[3px]" />
-        ) : (
-          <Check className="h-3 w-3 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity stroke-[3px]" />
-        )}
-      </button>
-      <span
-        className="h-2 w-2 flex-shrink-0 rounded-full"
-        style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
-      />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span
-          className="truncate text-sm font-medium"
+      <div className="flex items-center gap-3 w-full">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onStatusChange(task, status === "done" ? "todo" : "done");
+          }}
+          className="group flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-all hover:scale-110 cursor-pointer"
           style={{
-            color: status === "done" ? fgMuted : fg,
-            textDecoration: status === "done" ? "line-through" : "none",
-            opacity: status === "done" ? 0.6 : 1,
+            borderColor: status === "done"
+              ? "#10b981"
+              : activity
+                ? activity.color
+                : isOverdue
+                  ? "#f43f5e"
+                  : "rgba(148,163,184,0.5)",
+            backgroundColor: status === "done" ? "#10b981" : "transparent",
           }}
         >
-          {task.title}
-          {activity && (
-            <span className="mr-1 text-xs opacity-70" style={{ color: activity.color }}>
-              [{activity.name}]
-            </span>
+          {status === "done" ? (
+            <Check className="h-3.5 w-3.5 text-white stroke-[3px]" />
+          ) : (
+            <Check className="h-3 w-3 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity stroke-[3px]" />
           )}
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
+        </button>
+        <span
+          className="h-2 w-2 flex-shrink-0 rounded-full"
+          style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span
-            className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+            className="truncate text-sm font-medium"
             style={{
-              backgroundColor: isOverdue ? "rgba(244,63,94,0.12)" : cfg.badgeBg,
-              color: isOverdue ? "#f87171" : cfg.badgeColor,
+              color: status === "done" ? fgMuted : fg,
+              textDecoration: status === "done" ? "line-through" : "none",
+              opacity: status === "done" ? 0.6 : 1,
             }}
           >
-            <StatusIcon className={iconClass} />
-            {isOverdue ? `${toPersianDigits(overdueDays)} روز تأخیر` : cfg.badgeLabel}
+            {task.title}
+            {activity && (
+              <span className="mr-1 text-xs opacity-70" style={{ color: activity.color }}>
+                [{activity.name}]
+              </span>
+            )}
           </span>
-          {task.scheduled_date && (
-            <span className="text-xs" style={{ color: fgMuted }}>
-              {toShamsiShort(task.scheduled_date)}
-            </span>
-          )}
-          <span
-            className="rounded-md px-1.5 py-0.5 text-[11px] font-medium"
-            style={{
-              backgroundColor: `${PRIORITY_COLORS[task.priority]}18`,
-              color: PRIORITY_COLORS[task.priority],
-            }}
-          >
-            {PRIORITY_LABELS[task.priority]}
-          </span>
-          {showTimer && status !== "done" && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onStatusChange(task, status === "in_progress" ? "todo" : "in_progress");
-              }}
-              className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-all hover:bg-amber-500/15"
-              style={{
-                backgroundColor: status === "in_progress" ? "rgba(251,191,36,0.15)" : "rgba(128,128,128,0.08)",
-                color: status === "in_progress" ? "#fbbf24" : fgMuted,
-                border: status === "in_progress" ? "1px solid rgba(251,191,36,0.3)" : "1px solid transparent",
-              }}
-              title={status === "in_progress" ? "توقف تایمر" : "شروع تایمر"}
-            >
-              {status === "in_progress" ? (
-                <>
-                  <Pause className="h-3 w-3 animate-pulse text-amber-400" />
-                  <span>درحال انجام ({formatTimer(displaySeconds)})</span>
-                </>
-              ) : (
-                <>
-                  <Play className="h-3 w-3 text-indigo-400" />
-                  <span>شروع کار {displaySeconds > 0 ? `(${formatTimer(displaySeconds)})` : ""}</span>
-                </>
-              )}
-            </button>
-          )}
-          {showTimer && status === "done" && displaySeconds > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
             <span
-              className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-mono font-medium"
+              className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
               style={{
-                backgroundColor: "rgba(128,128,128,0.1)",
-                color: fgMuted,
+                backgroundColor: isOverdue ? "rgba(244,63,94,0.12)" : cfg.badgeBg,
+                color: isOverdue ? "#f87171" : cfg.badgeColor,
               }}
             >
-              ⏱ {formatTimer(displaySeconds)}
+              <StatusIcon className={iconClass} />
+              {isOverdue ? `${toPersianDigits(overdueDays)} روز تأخیر` : cfg.badgeLabel}
             </span>
-          )}
-          {task.tags && task.tags.length > 0 && task.tags.map((t) => (
+            {task.scheduled_date && (
+              <span className="text-xs" style={{ color: fgMuted }}>
+                {toShamsiShort(task.scheduled_date)}
+              </span>
+            )}
             <span
-              key={t}
               className="rounded-md px-1.5 py-0.5 text-[11px] font-medium"
-              style={{ backgroundColor: "rgba(99,102,241,0.12)", color: "#818cf8" }}
+              style={{
+                backgroundColor: `${PRIORITY_COLORS[task.priority]}18`,
+                color: PRIORITY_COLORS[task.priority],
+              }}
             >
-              #{t}
+              {PRIORITY_LABELS[task.priority]}
             </span>
-          ))}
-          {task.comment && (
-            <span className="text-[11px]" style={{ color: fgMuted }} title={task.comment}>
-              <MessageSquare className="inline h-3 w-3 mr-0.5" />
-              {task.comment.length > 20 ? task.comment.slice(0, 20) + "..." : task.comment}
-            </span>
-          )}
+            {showTimer && status !== "done" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStatusChange(task, status === "in_progress" ? "todo" : "in_progress");
+                }}
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-all hover:bg-amber-500/15 cursor-pointer"
+                style={{
+                  backgroundColor: status === "in_progress" ? "rgba(251,191,36,0.15)" : "rgba(128,128,128,0.08)",
+                  color: status === "in_progress" ? "#fbbf24" : fgMuted,
+                  border: status === "in_progress" ? "1px solid rgba(251,191,36,0.3)" : "1px solid transparent",
+                }}
+                title={status === "in_progress" ? "توقف تایمر" : "شروع تایمر"}
+              >
+                {status === "in_progress" ? (
+                  <>
+                    <Pause className="h-3 w-3 animate-pulse text-amber-400" />
+                    <span>درحال انجام ({formatTimer(displaySeconds)})</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3 w-3 text-indigo-400" />
+                    <span>شروع کار {displaySeconds > 0 ? `(${formatTimer(displaySeconds)})` : ""}</span>
+                  </>
+                )}
+              </button>
+            )}
+            {showTimer && status === "done" && displaySeconds > 0 && (
+              <span
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-mono font-medium"
+                style={{
+                  backgroundColor: "rgba(128,128,128,0.1)",
+                  color: fgMuted,
+                }}
+              >
+                ⏱ {formatTimer(displaySeconds)}
+              </span>
+            )}
+            {task.tags && task.tags.length > 0 && task.tags.map((t) => (
+              <span
+                key={t}
+                className="rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                style={{ backgroundColor: "rgba(99,102,241,0.12)", color: "#818cf8" }}
+              >
+                #{t}
+              </span>
+            ))}
+            {task.comment && (
+              <span className="text-[11px]" style={{ color: fgMuted }} title={task.comment}>
+                <MessageSquare className="inline h-3 w-3 mr-0.5" />
+                {task.comment.length > 20 ? task.comment.slice(0, 20) + "..." : task.comment}
+              </span>
+            )}
+            {task.description && task.description.trim().length > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDescription((prev) => !prev);
+                }}
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-all cursor-pointer"
+                style={{
+                  backgroundColor: showDescription ? "rgba(99,102,241,0.22)" : "rgba(99,102,241,0.09)",
+                  color: showDescription ? "#a5b4fc" : "#818cf8",
+                  border: showDescription ? "1px solid rgba(129,140,248,0.35)" : "1px solid transparent",
+                }}
+                title="مشاهده توضیحات و برنامه تمرین"
+              >
+                <FileText className="h-3 w-3" />
+                <span>توضیحات</span>
+                <ChevronDown className={`h-2.5 w-2.5 transition-transform duration-200 ${showDescription ? "rotate-180" : ""}`} />
+              </button>
+            )}
+          </div>
         </div>
+        <button
+          onClick={() => onDelete(task.id)}
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-all cursor-pointer"
+          style={{ opacity: hovered ? 1 : 0.65, color: fgMuted }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(244,63,94,0.12)";
+            (e.currentTarget as HTMLElement).style.color = "#f87171";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+            (e.currentTarget as HTMLElement).style.color = fgMuted;
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
-      <button
-        onClick={() => onDelete(task.id)}
-        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-all"
-        style={{ opacity: hovered ? 1 : 0.65, color: fgMuted }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(244,63,94,0.12)";
-          (e.currentTarget as HTMLElement).style.color = "#f87171";
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
-          (e.currentTarget as HTMLElement).style.color = fgMuted;
-        }}
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+
+      <AnimatePresence>
+        {showDescription && task.description && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+            animate={{ opacity: 1, height: "auto", marginTop: 10 }}
+            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+            transition={{ duration: 0.2 }}
+            className="w-full overflow-hidden rounded-xl p-3 text-xs leading-relaxed"
+            style={{
+              backgroundColor: "rgba(0,0,0,0.22)",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-[11px] font-medium">
+              <span className="flex items-center gap-1.5 text-indigo-400">
+                <FileText className="h-3.5 w-3.5" />
+                <span>توضیحات و تمرین‌های تسک</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (task.description) {
+                    navigator.clipboard.writeText(task.description);
+                    setCopiedDesc(true);
+                    setTimeout(() => setCopiedDesc(false), 2000);
+                  }
+                }}
+                className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-white transition-colors px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 cursor-pointer"
+              >
+                {copiedDesc ? (
+                  <>
+                    <Check className="h-3 w-3 text-emerald-400" />
+                    <span className="text-emerald-400">کپی شد</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" />
+                    <span>کپی متن</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <div
+              className="whitespace-pre-line text-right font-sans select-text text-xs leading-6"
+              style={{ color: fg }}
+              dir="rtl"
+            >
+              {task.description}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
