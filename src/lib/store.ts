@@ -1303,8 +1303,11 @@ export function confirmAndDelete(title: string, onConfirm: () => void) {
   }
 }
 
-export function exportTasksJSON(): string {
-  const tasks = TaskStore.list();
+export function exportTasksJSON(tag?: string): string {
+  let tasks = TaskStore.list();
+  if (tag && tag !== "all") {
+    tasks = tasks.filter((t) => t.tags && t.tags.includes(tag));
+  }
   return JSON.stringify({ focusflow_tasks: tasks }, null, 2);
 }
 

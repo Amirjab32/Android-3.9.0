@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { 
   X, 
@@ -24,10 +24,11 @@ import {
   File,
   Trash2,
   HardDrive,
-  CheckSquare
+  CheckSquare,
+  Tag
 } from "lucide-react";
 import { useThemeStyles } from "@/lib/useThemeStyles";
-import { exportDatabase, importDatabase, BACKUP_KEYS, exportTasksJSON, importTasksJSON } from "@/lib/store";
+import { exportDatabase, importDatabase, BACKUP_KEYS, exportTasksJSON, importTasksJSON, TaskStore } from "@/lib/store";
 import { syncManager, apiUrl } from "@/lib/sync";
 import { LocalSnapshotService, type LocalSnapshot } from "@/lib/localSnapshots";
 import { toPersianDigits } from "@/lib/shamsi";
@@ -50,6 +51,21 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
   const [tasksCopySuccess, setTasksCopySuccess] = useState(false);
   const [tasksImportText, setTasksImportText] = useState("");
   const [tasksImportMode, setTasksImportMode] = useState<"append" | "replace">("append");
+  const [exportTagFilter, setExportTagFilter] = useState<string>("all");
+
+  const availableTags = useMemo(() => {
+    const list = TaskStore.list();
+    const tagMap = new Map<string, number>();
+    list.forEach((t) => {
+      t.tags?.forEach((tg) => {
+        if (tg && tg.trim()) {
+          const clean = tg.trim();
+          tagMap.set(clean, (tagMap.get(clean) || 0) + 1);
+        }
+      });
+    });
+    return Array.from(tagMap.entries()).map(([tag, count]) => ({ tag, count }));
+  }, [isOpen, activeTab]);
 
   // WiFi Sync States
   const [serverStatus, setServerStatus] = useState<"checking" | "connected" | "disconnected">("checking");
@@ -321,21 +337,22 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
   const handleExportTasksFile = () => {
     try {
       setError(null);
-      const dataStr = exportTasksJSON();
+      const dataStr = exportTasksJSON(exportTagFilter);
       const blob = new Blob([dataStr], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const now = new Date();
       const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const tagSuffix = exportTagFilter !== "all" ? `_${exportTagFilter}` : "";
       
       a.href = url;
-      a.download = `FocusFlow_Tasks_${dateStr}.json`;
+      a.download = `FocusFlow_Tasks${tagSuffix}_${dateStr}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      setSuccessMsg("فایل تسک‌ها با موفقیت دانلود شد.");
+      setSuccessMsg(`فایل تسک‌ها ${exportTagFilter !== "all" ? `(برچسب #${exportTagFilter}) ` : ""}با موفقیت دانلود شد.`);
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
       setError("خطا در ایجاد و دانلود فایل تسک‌ها.");
@@ -345,10 +362,10 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
   const handleExportTasksClipboard = () => {
     try {
       setError(null);
-      const dataStr = exportTasksJSON();
+      const dataStr = exportTasksJSON(exportTagFilter);
       navigator.clipboard.writeText(dataStr).then(() => {
         setTasksCopySuccess(true);
-        setSuccessMsg("کد JSON تسک‌ها با موفقیت در کلیپ‌بورد کپی شد.");
+        setSuccessMsg(`کد JSON تسک‌ها ${exportTagFilter !== "all" ? `(برچسب #${exportTagFilter}) ` : ""}با موفقیت در کلیپ‌بورد کپی شد.`);
         setTimeout(() => {
           setTasksCopySuccess(false);
           setSuccessMsg(null);
@@ -844,6 +861,45 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
             {/* 1. Export Tasks */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold" style={{ color: fgMuted }}>۱. دانلود و خروجی تسک‌ها (جهت ارائه به هوش مصنوعی)</h4>
+              
+              {/* Tag filter chips */}
+              {availableTags.length > 0 && (
+                <div className="space-y-1.5 p-2.5 rounded-xl border" style={{ backgroundColor: inputBg, borderColor: cardBorder }}>
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: fgMuted }}>
+                    <Tag className="h-3.5 w-3.5 text-indigo-400" />
+                    <span>فیلتر بر اساس برچسب:</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setExportTagFilter("all")}
+                      className={`text-[11px] font-medium px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        exportTagFilter === "all"
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
+                      }`}
+                    >
+                      همه تسک‌ها
+                    </button>
+                    {availableTags.map(({ tag, count }) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setExportTagFilter(tag)}
+                        className={`text-[11px] font-medium px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                          exportTagFilter === tag
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10"
+                        }`}
+                      >
+                        <span>#{tag}</span>
+                        <span className="text-[9px] opacity-80">({toPersianDigits(count)})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={handleExportTasksFile}
@@ -853,8 +909,12 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
                     <Download className="h-5 w-5" />
                   </div>
-                  <span className="text-[11px] font-bold" style={{ color: fg }}>دانلود فایل JSON تسک‌ها</span>
-                  <span className="text-[9px]" style={{ color: fgMuted }}>خروجی سبک، اختصاصی تسک‌ها</span>
+                  <span className="text-[11px] font-bold" style={{ color: fg }}>
+                    {exportTagFilter === "all" ? "دانلود فایل JSON تسک‌ها" : `دانلود تسک‌های #${exportTagFilter}`}
+                  </span>
+                  <span className="text-[9px]" style={{ color: fgMuted }}>
+                    {exportTagFilter === "all" ? "خروجی سبک، تمام تسک‌ها" : `فقط تسک‌های دارای برچسب #${exportTagFilter}`}
+                  </span>
                 </button>
 
                 <button
@@ -866,7 +926,7 @@ export default function BackupModal({ isOpen, onClose, onSuccess }: Props) {
                     {tasksCopySuccess ? <Check className="h-5 w-5 text-emerald-400" /> : <Copy className="h-5 w-5" />}
                   </div>
                   <span className="text-[11px] font-bold" style={{ color: fg }}>
-                    {tasksCopySuccess ? "کپی شد!" : "کپی متن JSON تسک‌ها"}
+                    {tasksCopySuccess ? "کپی شد!" : exportTagFilter === "all" ? "کپی متن JSON تسک‌ها" : `کپی متن #${exportTagFilter}`}
                   </span>
                   <span className="text-[9px]" style={{ color: fgMuted }}>جهت چسباندن در چت هوش مصنوعی</span>
                 </button>
